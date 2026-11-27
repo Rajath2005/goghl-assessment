@@ -1,5 +1,5 @@
 export type User = { sub: string; name: string; workspaces: { id: string; role: string }[] };
-export type Message = { seq: number; at: string; text: string; type: string; status?: string };
+export type Message = { seq: number; at: string; text?: string; type: string; status?: string; note?: import('./cryptoNotes').SealedNote };
 export type Conversation = { contact: string; assignee: string | null; closed: boolean; activity: string; preview: string | null };
 export type Thread = { contact: string; assignee: string | null; closed: boolean; messages: Message[] };
 export type Page = { items: Conversation[]; nextOffset: number | null; after: number };

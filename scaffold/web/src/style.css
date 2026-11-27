@@ -142,6 +142,18 @@ dialog::backdrop { background: #1d274c66; }
 .dialog-title h2 { font-size: 22px; letter-spacing: -.05em; }
 dialog input { border: 1px solid #bac4d6; border-radius: 6px; padding: 10px; width: 100%; margin: 0 0 18px; }
 .menu-toggle, .back, .nav-overlay { display: none; }
+.compose-mode { display: flex; gap: 3px; padding: 0 clamp(12px, 2vw, 32px) 7px; }
+.compose-mode button { font-size: 12px; font-weight: 600; border: 0; background: transparent; color: var(--muted); }
+.compose-mode button[aria-pressed=true] { color: var(--blue); background: var(--tint); }
+.note-composer, .private-note, .note-unlock { background: #fff8e8; border: 1px solid #ecddba; }
+.note-composer textarea { background: transparent; }
+.private-note { max-width: 85%; border-radius: 8px; padding: 12px 14px; font-size: 14px; }
+.private-note strong { display: flex; align-items: center; gap: 6px; color: #745322; font-size: 12px; margin-bottom: 5px; }
+.private-note p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.private-note .quiet { font-size: 12px; }
+.note-unlock { display: flex; align-items: center; gap: 9px; font-size: 13px; margin: 0 15px 16px; padding: 13px; border-radius: 8px; }
+.note-unlock button { margin-left: auto; }
+dialog form > p { font-size: 14px; line-height: 1.5; margin-bottom: 15px; }
 @media (max-width: 1100px) and (min-width: 861px) {
   .sidebar { width: 185px; padding-inline: 10px; }
   .sidebar .brand { font-size: 20px; }

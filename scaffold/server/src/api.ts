@@ -18,10 +18,11 @@ export function apiRoutes(app: Express, inbox: Inbox, redis: Redis) {
       await run(req, res, authorized(user, req.query.workspace), user);
     });
   app.get('/api/conversations', member(async (req, res, workspace, user) => {
-    const after = await inbox.tail(workspace);
+    const head = await inbox.tail(workspace);
+    const after = integer(req.query.asOf, head, head);
     const filter = req.query.filter ?? 'all';
     if (typeof filter !== 'string' || !['all', 'open', 'closed', 'mine', 'unassigned'].includes(filter)) throw new HttpError(400, 'Unknown inbox filter');
-    const result = await conversations(inbox, workspace, integer(req.query.offset, 0, 10000000),
+    const result = await conversations(inbox, workspace, after, integer(req.query.offset, 0, 10000000),
       Math.max(1, integer(req.query.limit, 30, 100)), filter, user.sub);
     res.json({ ...result, after });
   }));
@@ -41,5 +42,25 @@ export function apiRoutes(app: Express, inbox: Inbox, redis: Redis) {
     if (typeof req.body?.closed !== 'boolean') throw new HttpError(400, 'Expected closed flag');
     await inbox.setClosed(workspace, field(req.body.contact, 'contact'), req.body.closed);
     res.sendStatus(200);
+  }));
+  app.get('/api/note-key', member(async (_req, res, workspace) => {
+    const key = await inbox.noteKeys.findOne({ _id: workspace });
+    res.json({ fingerprint: key?.fingerprint ?? null });
+  }));
+  app.post('/api/note-key', member(async (req, res, workspace, user) => {
+    if (!user.workspaces.some(w => w.id === workspace && w.role === 'admin')) throw new HttpError(403, 'Administrator access required');
+    const fingerprint = field(req.body?.fingerprint, 'fingerprint', 64);
+    if (!/^[a-f0-9]{64}$/.test(fingerprint)) throw new HttpError(400, 'Invalid key fingerprint');
+    await inbox.registerNoteKey(workspace, fingerprint);
+    res.sendStatus(200);
+  }));
+  app.post('/api/notes', member(async (req, res, workspace, user) => {
+    const { contact, id, fingerprint, iv, ciphertext } = req.body ?? {};
+    field(contact, 'contact'); field(id, 'id', 64); field(fingerprint, 'fingerprint', 64);
+    field(iv, 'iv', 16); field(ciphertext, 'ciphertext', 45000);
+    if (!/^[0-9a-f-]{36}$/.test(id) || !/^[a-f0-9]{64}$/.test(fingerprint) || !/^[\w-]{16}$/.test(iv) ||
+        !/^[\w-]+$/.test(ciphertext) || Buffer.from(ciphertext, 'base64url').length < 17) throw new HttpError(400, 'Invalid encrypted note');
+    await inbox.addNote(workspace, contact, { id, author: user.sub, fingerprint, iv, ciphertext });
+    res.sendStatus(201);
   }));
 }

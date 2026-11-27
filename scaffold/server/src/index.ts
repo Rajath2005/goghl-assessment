@@ -20,6 +20,13 @@ const redis = getRedis();
 await Promise.all([inbox.initialize(), redis.ping()]);
 const app = express();
 app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+  });
+  next();
+});
 app.get('/healthz', route(async (_req, res) => {
   await Promise.all([db.command({ ping: 1 }), redis.ping()]);
   res.json({ ok: true });
@@ -38,7 +45,7 @@ app.use(express.json({ limit: '96kb' }));
 authRoutes(app, redis);
 apiRoutes(app, inbox, redis);
 app.post('/__grader/reset', route(async (_req, res) => {
-  await inbox.events.deleteMany({});
+  await Promise.all([inbox.events.deleteMany({}), inbox.noteKeys.deleteMany({})]);
   await redis.del(...coordinationKeys());
   res.json({ ok: true });
 }));

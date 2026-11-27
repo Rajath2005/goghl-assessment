@@ -7,13 +7,14 @@ export type Change = {
   workspace: string;
   contact: string;
   at: Date;
-  type: 'message.inbound' | 'message.queued' | 'message.status' | 'conversation.assigned' | 'conversation.closed' | 'conversation.reopened';
+  type: 'message.inbound' | 'message.queued' | 'message.status' | 'conversation.assigned' | 'conversation.closed' | 'conversation.reopened' | 'note.added';
   message_id?: string;
   client_ref?: string;
   status?: Status;
   text?: string;
   assignee?: string;
   eventId?: string;
+  note?: { id: string; author: string; fingerprint: string; iv: string; ciphertext: string };
   // A logical operation key is independent of the delivery attempt.
   key?: string;
 };
@@ -42,7 +43,12 @@ export function workspaceId(value: unknown): string {
 
 export class Inbox {
   readonly events;
-  constructor(db: Db) { this.events = db.collection<Entry>('sb_events', { writeConcern: { w: 'majority', j: true } }); }
+  readonly noteKeys;
+  constructor(db: Db) {
+    const options = { writeConcern: { w: 'majority', j: true } } as const;
+    this.events = db.collection<Entry>('sb_events', options);
+    this.noteKeys = db.collection<{ _id: string; fingerprint: string }>('sb_note_keys', options);
+  }
 
   async initialize() {
     await this.events.createIndexes([
@@ -99,6 +105,27 @@ export class Inbox {
       const owner = await this.events.findOne({ workspace, key });
       if (owner && owner.assignee !== assignee) throw new HttpError(409, 'Another agent holds this conversation');
       return owner ? null : { type: 'conversation.assigned', workspace, contact, assignee, key, at: new Date() };
+    });
+  }
+  async registerNoteKey(workspace: string, fingerprint: string) {
+    try {
+      await this.noteKeys.insertOne({ _id: workspace, fingerprint });
+    } catch (err) {
+      if (!(err instanceof MongoServerError) || err.code !== 11000) throw err;
+      const existing = await this.noteKeys.findOne({ _id: workspace });
+      if (existing?.fingerprint !== fingerprint) throw new HttpError(409, 'This workspace already has a note key');
+    }
+  }
+  async addNote(workspace: string, contact: string, note: NonNullable<Change['note']>) {
+    const registration = await this.noteKeys.findOne({ _id: workspace });
+    if (!registration || note.fingerprint !== registration.fingerprint) throw new HttpError(409, 'Workspace key does not match');
+    const key = 'note:' + note.id;
+    await this.append(workspace, async () => {
+      if (!await this.exists(workspace, { contact })) throw new HttpError(404, 'Send or claim the conversation first');
+      const saved = await this.events.findOne({ workspace, key });
+      if (saved && (saved.contact !== contact || saved.note?.author !== note.author || saved.note.ciphertext !== note.ciphertext ||
+          saved.note.iv !== note.iv)) throw new HttpError(409, 'Note ID already used');
+      return saved ? null : { workspace, contact, note, type: 'note.added', key, at: new Date() };
     });
   }
   async setClosed(workspace: string, contact: string, closed: boolean) {

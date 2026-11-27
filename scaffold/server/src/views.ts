@@ -6,19 +6,18 @@ export function frame(e: Entry) {
   return { seq, type, contact, message_id, client_ref, status, assignee, at };
 }
 
-export async function conversations(inbox: Inbox, workspace: string, offset: number, limit: number, filter: string, sub: string) {
+export async function conversations(inbox: Inbox, workspace: string, asOf: number, offset: number, limit: number, filter: string, sub: string) {
   const pipeline: Document[] = [
-    { $match: { workspace, type: { $ne: 'message.status' } } },
+    { $match: { workspace, seq: { $lte: asOf }, type: { $ne: 'message.status' } } },
+    { $set: { hasText: { $in: ['$type', ['message.inbound', 'message.queued']] } } },
     { $group: {
       _id: '$contact', activity: { $max: '$at' }, assignee: { $max: '$assignee' },
-      recent: { $top: { sortBy: { at: -1, seq: -1 }, output: '$type' } },
       preview: { $top: { sortBy: { hasText: -1, at: -1, seq: -1 }, output: '$text' } },
       closedSeq: { $max: { $cond: [{ $eq: ['$type', 'conversation.closed'] }, '$seq', 0] } },
       reopenSeq: { $max: { $cond: [{ $eq: ['$type', 'conversation.reopened'] }, '$seq', 0] } },
     } },
-    { $project: { _id: 0, contact: '$_id', activity: 1, preview: 1, recent: 1, assignee: 1, closed: { $gt: ['$closedSeq', '$reopenSeq'] } } },
+    { $project: { _id: 0, contact: '$_id', activity: 1, preview: 1, assignee: 1, closed: { $gt: ['$closedSeq', '$reopenSeq'] } } },
   ];
-  pipeline.splice(1, 0, { $set: { hasText: { $in: ['$type', ['message.inbound', 'message.queued']] } } });
   if (filter === 'mine') pipeline.push({ $match: { assignee: sub, closed: false } });
   if (filter === 'unassigned') pipeline.push({ $match: { assignee: null, closed: false } });
   if (filter === 'open' || filter === 'closed') pipeline.push({ $match: { closed: filter === 'closed' } });
@@ -44,9 +43,9 @@ export async function thread(inbox: Inbox, workspace: string, contact: string) {
     if (row.type === 'conversation.closed') closed = true;
     if (row.type === 'conversation.reopened') closed = false;
   }
-  const messages = rows.filter(row => row.type === 'message.inbound' || row.type === 'message.queued')
+  const messages = rows.filter(row => row.type === 'message.inbound' || row.type === 'message.queued' || row.type === 'note.added')
     .sort(chronology).map(row => ({
-      ...frame(row), text: row.text, status: row.client_ref ? statuses.get(row.client_ref) : undefined,
+      ...frame(row), text: row.text, note: row.note, status: row.client_ref ? statuses.get(row.client_ref) : undefined,
     }));
   return { contact, assignee, closed, messages };
 }

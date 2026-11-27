@@ -6,6 +6,8 @@ import { Brand, PatchPanel } from './Brand';
 import { api, ApiError, displayTime, human, initials, listTime, workspaceName, type Thread, type User } from './client';
 import { useInbox } from './useInbox';
 import { Composer } from './Composer';
+import { KeyDialog, NoteComposer, PrivateNote } from './Notes';
+import type { NoteKey } from './cryptoNotes';
 import './style.css';
 
 const folders: [string, string, LucideIcon][] = [
@@ -59,12 +61,14 @@ function Workspace({ user, workspace, switchTo, logout }: { user: User; workspac
   const [menu, setMenu] = useState(false), [newThread, setNewThread] = useState(false);
   const [draftContact, setDraftContact] = useState<string>(), [entered, setEntered] = useState('');
   const [mobileThread, setMobileThread] = useState(false), [actionError, setActionError] = useState(''), [pending, setPending] = useState(false);
+  const [noteMode, setNoteMode] = useState(false), [keyDialog, showKeyDialog] = useState(false);
+  const [noteKey, setNoteKey] = useState<NoteKey | null>(null);
   const view = useInbox(workspace, filter, contact === draftContact ? null : contact);
   const dialog = useRef<HTMLDialogElement>(null);
   const lastMessage = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const detail: Thread | undefined = contact && contact === draftContact ? { contact, closed: false, assignee: null, messages: [] } : view.detail;
-  const select = useCallback((id: string) => { choose(id); setMobileThread(true); setActionError(''); stickToBottom.current = true; }, []);
+  const select = useCallback((id: string) => { choose(id); setNoteMode(false); setMobileThread(true); setActionError(''); stickToBottom.current = true; }, []);
   useEffect(() => {
     if (!contact && view.list?.items[0] && window.matchMedia('(min-width: 861px)').matches) choose(view.list.items[0].contact);
   }, [view.list, contact]);
@@ -143,13 +147,21 @@ function Workspace({ user, workspace, switchTo, logout }: { user: User; workspac
                   const dayBreak = i === 0 || new Date(all[i - 1].at).toDateString() !== date.toDateString();
                   const StatusIcon = m.status === 'delivered' ? CheckCheck : m.status === 'failed' ? CircleAlert : m.status === 'sent' ? Check : Clock3;
                   return <div key={m.seq}>{dayBreak && <div className="day-break"><span>{date.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}</span></div>}
+                    {m.note ? <article className="message"><PrivateNote workspace={workspace} contact={contact} note={m.note} unlocked={noteKey} open={() => showKeyDialog(true)}/>
+                      <time className="message-meta" dateTime={m.at}>{displayTime(m.at)}</time></article> :
                     <article className={'message ' + (outbound ? 'outgoing' : 'incoming')} aria-label={outbound ? 'Agent reply' : 'Customer message'}>
                       <div className="bubble">{m.text}</div><div className="message-meta"><time dateTime={m.at}>{displayTime(m.at)}</time>
-                        {outbound && <span className={m.status}><StatusIcon size={13}/>{m.status}</span>}</div></article></div>;
+                        {outbound && <span className={m.status}><StatusIcon size={13}/>{m.status}</span>}</div></article>}</div>;
                 })}<div ref={lastMessage}/>
               </div>
-              {detail.closed ? <div className="closed-note"><Archive size={17}/>Reopen this conversation to reply.</div> :
-                <Composer key={contact} workspace={workspace} contact={contact} sub={user.sub} onSent={() => { setDraftContact(undefined); stickToBottom.current = true; view.refresh(); }}/>}
+              {detail.closed ? <div className="closed-note"><Archive size={17}/>Reopen this conversation to reply.</div> : <>
+                {!draftContact && <div className="compose-mode" aria-label="Message type">
+                  <button aria-pressed={!noteMode} onClick={() => setNoteMode(false)}>Reply</button>
+                  <button aria-pressed={noteMode} onClick={() => setNoteMode(true)}>Private note</button></div>}
+                {noteMode && !draftContact ? <NoteComposer key={contact} workspace={workspace} contact={contact} sub={user.sub} unlocked={noteKey}
+                  open={() => showKeyDialog(true)} onSent={view.refresh}/> :
+                  <Composer key={contact} workspace={workspace} contact={contact} sub={user.sub} onSent={() => { setDraftContact(undefined); stickToBottom.current = true; view.refresh(); }}/>}
+              </>}
               </>}
           </>}
       </section></div>
@@ -165,5 +177,7 @@ function Workspace({ user, workspace, switchTo, logout }: { user: User; workspac
           autoFocus required maxLength={128} onChange={e => setEntered(e.target.value)}/><button className="primary" disabled={!entered.trim()}>Open conversation</button></form>
     </dialog>
     {actionError && !contact && <div role="alert" className="toast">{actionError}</div>}
+    {keyDialog && <KeyDialog workspace={workspace} admin={role === 'admin'} close={() => showKeyDialog(false)}
+      done={key => { setNoteKey(key); showKeyDialog(false); }}/>}
   </main>;
 }

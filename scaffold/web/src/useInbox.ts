@@ -19,7 +19,9 @@ export function useInbox(workspace: string, filter: string, contact: string | nu
       let offset = 0;
       let result: Page = { items: [], nextOffset: null, after: 0 };
       for (let i = 0; i < pages; i++) {
-        const next: Page = await api('conversations', { workspace, filter, offset: String(offset), limit: '24' }, undefined, cancel.signal);
+        const query: Record<string, string> = { workspace, filter, offset: String(offset), limit: '24' };
+        if (i > 0) query.asOf = String(result.after);
+        const next: Page = await api('conversations', query, undefined, cancel.signal);
         result = { ...next, after: i === 0 ? next.after : result.after, items: [...result.items, ...next.items] };
         if (next.nextOffset === null) break;
         offset = next.nextOffset;

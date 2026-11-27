@@ -9,6 +9,10 @@ import { route } from './http.js';
 import { receive } from './webhook.js';
 import { snapshot } from './views.js';
 import { coordinationKeys, startWorkers } from './outbox.js';
+import { authRoutes } from './auth.js';
+import { apiRoutes } from './api.js';
+import { attachLive } from './live.js';
+import { fileURLToPath } from 'node:url';
 
 const db = await getDb();
 const inbox = new Inbox(db);
@@ -31,6 +35,8 @@ app.use('/__grader', (req, res, next) => {
   } else next();
 });
 app.use(express.json({ limit: '96kb' }));
+authRoutes(app, redis);
+apiRoutes(app, inbox, redis);
 app.post('/__grader/reset', route(async (_req, res) => {
   await inbox.events.deleteMany({});
   await redis.del(...coordinationKeys());
@@ -52,8 +58,10 @@ const errors: ErrorRequestHandler = (error, _req, res, _next) => {
   if (status >= 500) console.error('Request failed', error.name, error.code ?? '');
   res.status(status).json({ error: error instanceof HttpError ? error.message : status >= 500 ? 'Service temporarily unavailable' : 'Invalid request body' });
 };
+app.use(express.static(fileURLToPath(new URL('../../web/dist/', import.meta.url))));
 app.use(errors);
 const server = createServer(app);
+attachLive(server, inbox, redis);
 server.listen(config.port, () => {
   startWorkers(inbox, redis);
   console.log('Switchboard ready on port', config.port);
